@@ -223,6 +223,46 @@ async def cron_daily_alert():
     return result
 
 
+@router.post("/daily-whatsapp")
+async def cloud_scheduler_daily():
+    """
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    CLOUD SCHEDULER DAILY WHATSAPP ENDPOINT
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    Called by Google Cloud Scheduler at 6:00 AM IST daily.
+    
+    Cloud Scheduler Config:
+      Schedule:  0 6 * * *
+      Timezone:  Asia/Kolkata
+      Method:    POST
+      URL:       https://YOUR_APP/api/whatsapp/daily-whatsapp
+    
+    Flow for EACH active farmer:
+      1. Fetch live crop price (farmer's selected crop + district)
+      2. Fetch today's weather + tomorrow's forecast
+      3. Generate personalized message in farmer's language
+      4. Send via WhatsApp Cloud API
+    
+    Returns full job summary with success/failure counts.
+    """
+    logger.info("[WA Cloud Scheduler] Daily WhatsApp job triggered")
+    
+    try:
+        result = await daily_whatsapp_job(triggered_by="cloud_scheduler")
+        return {
+            "status": "completed",
+            "message": "Daily WhatsApp messages sent to all active farmers",
+            "result": result,
+        }
+    except Exception as e:
+        logger.error(f"[WA Cloud Scheduler] Job failed: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+        }
+
+
 @router.get("/status")
 async def get_status(
     limit: int = Query(default=10, le=50),

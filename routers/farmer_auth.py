@@ -9,7 +9,7 @@ Optimized for:
 - Timeout handling
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from datetime import datetime
@@ -149,6 +149,7 @@ async def with_timeout(coro, timeout_seconds: int = FIRESTORE_TIMEOUT, error_msg
 @router.post("/register", response_model=ProfileResponse)
 async def register_farmer(
     request: RegisterRequest,
+    background_tasks: BackgroundTasks,
     firebase_user: FirebaseUser = Depends(get_current_firebase_user)
 ):
     """
@@ -208,6 +209,22 @@ async def register_farmer(
         ),
         error_msg="பதிவு தோல்வியடைந்தது. மீண்டும் முயற்சிக்கவும்"  # Registration failed
     )
+    
+    # ─── Send instant WhatsApp welcome message (background) ─────────────
+    try:
+        from services.whatsapp_welcome import send_welcome_whatsapp
+        background_tasks.add_task(
+            send_welcome_whatsapp,
+            phone=mobile,
+            name=request.name,
+            crop=request.crop_type or "General",
+            district=request.district or "Tamil Nadu",
+            language=request.language or "tamil",
+        )
+    except Exception as e:
+        # Don't fail registration if WhatsApp fails
+        import logging
+        logging.getLogger(__name__).error(f"WhatsApp welcome task failed to schedule: {e}")
     
     return ProfileResponse(
         firebase_uid=profile["firebase_uid"],

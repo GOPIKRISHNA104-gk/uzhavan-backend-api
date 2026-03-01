@@ -1,0 +1,287 @@
+# ──────────────────────────────────────────────────────────────
+# Uzhavan AI - Production Kubernetes Deployment
+# Edge-optimized for South India region
+# ──────────────────────────────────────────────────────────────
+
+# ── Namespace ──────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: uzhavan-ai
+  labels:
+    app: uzhavan-ai
+    tier: production
+---
+
+# ── ConfigMap (Non-sensitive config) ───────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: uzhavan-config
+  namespace: uzhavan-ai
+data:
+  APP_ENV: "production"
+  LOG_LEVEL: "INFO"
+  REDIS_HOST: "redis-cluster"
+  REDIS_PORT: "6379"
+  WS_TIMEOUT: "300"
+  TTS_CACHE_TTL: "3600"
+  WEATHER_CACHE_TTL: "3600"
+  MARKET_CACHE_TTL: "86400"
+  NEWS_CACHE_TTL: "1800"
+  MAX_CONCURRENT_SESSIONS: "100"
+---
+
+# ── Secret (API Keys - apply separately) ──────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: uzhavan-secrets
+  namespace: uzhavan-ai
+type: Opaque
+stringData:
+  GEMINI_API_KEY: "${GEMINI_API_KEY}"
+  OPENWEATHER_API_KEY: "${OPENWEATHER_API_KEY}"
+  AGMARKNET_API_KEY: "${AGMARKNET_API_KEY}"
+  DATA_GOV_API_KEY: "${DATA_GOV_API_KEY}"
+  PLANT_API_KEY: "${PLANT_API_KEY}"
+---
+
+# ── Redis Cluster ─────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-cluster
+  namespace: uzhavan-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          livenessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          command: ["redis-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster
+  namespace: uzhavan-ai
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+
+# ── Voice AI Backend (3 replicas) ─────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-backend
+  namespace: uzhavan-ai
+  labels:
+    app: voice-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: voice-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: voice-backend
+    spec:
+      containers:
+        - name: voice-api
+          image: uzhavan-ai/voice-backend:latest
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: uzhavan-config
+            - secretRef:
+                name: uzhavan-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /api/call/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/call/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 3
+            failureThreshold: 10
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: voice-backend
+                topologyKey: "kubernetes.io/hostname"
+---
+
+# ── Voice Backend Service ─────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-backend
+  namespace: uzhavan-ai
+spec:
+  selector:
+    app: voice-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP
+---
+
+# ── Horizontal Pod Autoscaler (2–10 pods) ─────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: voice-backend-hpa
+  namespace: uzhavan-ai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: voice-backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 120
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+---
+
+# ── NGINX Ingress (WebSocket-enabled) ─────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: voice-ingress
+  namespace: uzhavan-ai
+  annotations:
+    # Enable WebSocket support
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/websocket-services: "voice-backend"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+    # SSL
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    # Sticky sessions for WebSocket
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "uzhavan-session"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "3600"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - voice.uzhavan.ai
+      secretName: uzhavan-tls
+  rules:
+    - host: voice.uzhavan.ai
+      http:
+        paths:
+          - path: /api/call
+            pathType: Prefix
+            backend:
+              service:
+                name: voice-backend
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: voice-backend
+                port:
+                  number: 8000
+---
+
+# ── PodDisruptionBudget ───────────────────────────────────────
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: voice-backend-pdb
+  namespace: uzhavan-ai
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: voice-backend

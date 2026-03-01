@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.env
+cache.db
+prices.db
+server.log
+firebase-service-account.json
+uzhavan.db
+protected/

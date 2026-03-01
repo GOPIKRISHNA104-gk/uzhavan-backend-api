@@ -1,0 +1,46 @@
+runtime: python310
+entrypoint: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+
+# GAE Flexible — supports WebSockets and long-running processes
+env: flexible
+
+# Instance class (F2 = 1 CPU, 512MB memory)
+instance_class: F2
+
+# Auto-scaling config (1M farmers handled by scaling to 10 instances)
+automatic_scaling:
+  min_num_instances: 1
+  max_num_instances: 10
+  target_cpu_utilization: 0.65
+  target_throughput_utilization: 0.6
+
+# Environment variables (use Secret Manager refs in production)
+env_variables:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  # Database
+  DATABASE_URL: "sqlite+aiosqlite:///./uzhavan.db"
+  PRICES_DATABASE_URL: "sqlite+aiosqlite:///./prices.db"
+  # Redis (use Cloud Memorystore or Redis Labs in production)
+  REDIS_URL: "redis://127.0.0.1:6379/0"
+  # API Keys — use Secret Manager in production, not env_variables
+  # GEMINI_API_KEY:      set via Secret Manager
+  # WHATSAPP_TOKEN:      set via Secret Manager
+  # WHATSAPP_PHONE_ID:   set via Secret Manager
+  # DATA_GOV_API_KEY:    set via Secret Manager
+
+# Health check
+readiness_check:
+  path: "/health"
+  check_interval_sec: 10
+  timeout_sec: 5
+  failure_threshold: 3
+  success_threshold: 2
+  app_start_timeout_sec: 60
+
+liveness_check:
+  path: "/health"
+  check_interval_sec: 30
+  timeout_sec: 10
+  failure_threshold: 3
+  success_threshold: 1

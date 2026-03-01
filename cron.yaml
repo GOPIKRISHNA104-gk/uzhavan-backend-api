@@ -1,0 +1,34 @@
+cron:
+  # ─── Mandi Price Fetch ────────────────────────────────────────────────────
+  # Runs at 6:00 AM IST (00:30 UTC) — fetches latest Agmark prices
+  - description: "Daily Mandi Price Fetch"
+    url: /api/prices/fetch/daily
+    schedule: every day 00:30
+    timezone: UTC
+    retry_parameters:
+      min_backoff_seconds: 30
+      max_backoff_seconds: 120
+      max_retry_attempts: 3
+
+  # ─── WhatsApp Farmer Alert ────────────────────────────────────────────────
+  # Runs at 6:05 AM IST (00:35 UTC) — 5 minutes after price fetch
+  # Sends personalized WhatsApp alerts to all registered farmers
+  - description: "Daily WhatsApp Farmer Alert (6:05 AM IST)"
+    url: /api/whatsapp/cron/daily-alert
+    schedule: every day 00:35
+    timezone: UTC
+    retry_parameters:
+      min_backoff_seconds: 60
+      max_backoff_seconds: 300
+      max_retry_attempts: 2
+
+  # ─── Evening Price Refresh ────────────────────────────────────────────────
+  # Runs at 6:00 PM IST (12:30 UTC) — evening price update
+  - description: "Evening Mandi Price Refresh"
+    url: /api/prices/fetch/daily
+    schedule: every day 12:30
+    timezone: UTC
+    retry_parameters:
+      min_backoff_seconds: 30
+      max_backoff_seconds: 120
+      max_retry_attempts: 2

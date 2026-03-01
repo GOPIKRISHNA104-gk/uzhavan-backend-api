@@ -130,10 +130,10 @@ def create_scheduler() -> AsyncIOScheduler:
         replace_existing=True
     )
 
-    # Periodic Weather Cache Update (Every 1 hour)
+    # Periodic Weather Cache Update (Every 6 hours - conserve API quota)
     scheduler.add_job(
         update_weather_cache_job,
-        trigger=IntervalTrigger(hours=1),
+        trigger=IntervalTrigger(hours=6),
         id="weather_cache_update",
         name="Update Stale Weather Cache",
         replace_existing=True

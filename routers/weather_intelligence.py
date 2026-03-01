@@ -625,117 +625,125 @@ async def get_weather_intelligence(
             detail="வானிலை தரவை பெற முடியவில்லை. மீண்டும் முயற்சிக்கவும்."
         )
     
-    # Parse API response
-    timezone = data.get("timezone", "Asia/Kolkata")
-    current_data = data.get("current", {})
-    daily_data = data.get("daily", {})
-    
-    # Get current time and sun times from API
-    current_time = current_data.get("time", datetime.now().isoformat())
-    
-    # Get today's sunrise/sunset
-    sunrise_times = daily_data.get("sunrise", [])
-    sunset_times = daily_data.get("sunset", [])
-    
-    today_sunrise = sunrise_times[0] if sunrise_times else "06:00"
-    today_sunset = sunset_times[0] if sunset_times else "18:00"
-    
-    # Determine day/night using API data
-    is_day = is_daytime(current_time, today_sunrise, today_sunset)
-    time_of_day = TimeOfDay.DAY if is_day else TimeOfDay.NIGHT
-    
-    # Get weather condition and icon
-    weather_code = current_data.get("weather_code", 0)
-    condition = get_weather_condition(weather_code)
-    icon = get_weather_icon(condition, is_day)
-    
-    # Build current weather
-    current_weather = CurrentWeather(
-        temperature=current_data.get("temperature_2m", 0),
-        feels_like=current_data.get("apparent_temperature", 0),
-        humidity=current_data.get("relative_humidity_2m", 50),
-        wind_speed=current_data.get("wind_speed_10m", 0),
-        cloud_cover=current_data.get("cloud_cover", 0),
-        precipitation=current_data.get("precipitation", 0),
-        weather_code=weather_code,
-        weather_condition=condition.value,
-        weather_description=get_weather_description(weather_code),
-        is_day=is_day,
-        time_of_day=time_of_day.value,
-        icon=icon,
-        sun_times=SunTimes(
-            sunrise=today_sunrise,
-            sunset=today_sunset,
-            is_day=is_day,
-            time_of_day=time_of_day.value
-        )
-    )
-    
-    # Build 7-day forecast
-    dates = daily_data.get("time", [])
-    temp_max = daily_data.get("temperature_2m_max", [])
-    temp_min = daily_data.get("temperature_2m_min", [])
-    precip_sum = daily_data.get("precipitation_sum", [])
-    rain_sum = daily_data.get("rain_sum", [])
-    weather_codes = daily_data.get("weathercode", daily_data.get("weather_code", []))
-    
-    daily_forecast = []
-    for i in range(min(7, len(dates))):
-        day_code = weather_codes[i] if i < len(weather_codes) else 0
-        day_condition = get_weather_condition(day_code)
-        day_icon = get_weather_icon(day_condition, True)  # Use day icon for forecast
+    # Parse API response - wrapped in try/except for debugging
+    try:
+        timezone = data.get("timezone", "Asia/Kolkata")
+        current_data = data.get("current", {})
+        daily_data = data.get("daily", {})
         
-        daily_forecast.append(DailyForecast(
-            date=dates[i] if i < len(dates) else "",
-            day_name=get_day_name(dates[i]) if i < len(dates) else "",
-            temp_max=temp_max[i] if i < len(temp_max) else 0,
-            temp_min=temp_min[i] if i < len(temp_min) else 0,
-            precipitation_sum=precip_sum[i] if i < len(precip_sum) else 0,
-            rain_sum=rain_sum[i] if i < len(rain_sum) else 0,
-            weather_code=day_code,
-            weather_condition=day_condition.value,
-            weather_description=get_weather_description(day_code),
-            icon=day_icon
-        ))
-    
-    # Calculate rain alert
-    daily_data_for_alert = [
-        {
-            "date": dates[i] if i < len(dates) else "",
-            "rain_sum": rain_sum[i] if i < len(rain_sum) else 0,
-            "precipitation_sum": precip_sum[i] if i < len(precip_sum) else 0
-        }
-        for i in range(min(4, len(dates)))
-    ]
-    rain_alert = calculate_rain_alert(daily_data_for_alert)
-    
-    # Generate farmer advice
-    farmer_advice = generate_farmer_advice(
-        weather_code=weather_code,
-        temperature=current_weather.temperature,
-        humidity=current_weather.humidity,
-        rain_alert=rain_alert
-    )
-    
-    # Build response
-    result = WeatherIntelligenceResponse(
-        location=location.title(),
-        latitude=latitude,
-        longitude=longitude,
-        timezone=timezone,
-        current=current_weather,
-        daily_forecast=daily_forecast,
-        rain_alert=rain_alert,
-        farmer_advice=farmer_advice,
-        last_updated=datetime.now().isoformat(),
-        cached=False
-    )
-    
-    # Cache the response
-    cache_data = {"_response": result.model_dump()}
-    _set_cache(latitude, longitude, cache_data)
-    
-    return result
+        # Get current time and sun times from API
+        current_time = current_data.get("time", datetime.now().isoformat())
+        
+        # Get today's sunrise/sunset
+        sunrise_times = daily_data.get("sunrise", [])
+        sunset_times = daily_data.get("sunset", [])
+        
+        today_sunrise = sunrise_times[0] if sunrise_times else "06:00"
+        today_sunset = sunset_times[0] if sunset_times else "18:00"
+        
+        # Determine day/night using API data
+        is_day = is_daytime(current_time, today_sunrise, today_sunset)
+        time_of_day = TimeOfDay.DAY if is_day else TimeOfDay.NIGHT
+        
+        # Get weather condition and icon
+        weather_code = current_data.get("weather_code", 0)
+        condition = get_weather_condition(weather_code)
+        icon = get_weather_icon(condition, is_day)
+        
+        # Build current weather
+        current_weather = CurrentWeather(
+            temperature=current_data.get("temperature_2m", 0),
+            feels_like=current_data.get("apparent_temperature", 0),
+            humidity=current_data.get("relative_humidity_2m", 50),
+            wind_speed=current_data.get("wind_speed_10m", 0),
+            cloud_cover=current_data.get("cloud_cover", 0),
+            precipitation=current_data.get("precipitation", 0),
+            weather_code=weather_code,
+            weather_condition=condition.value,
+            weather_description=get_weather_description(weather_code),
+            is_day=is_day,
+            time_of_day=time_of_day.value,
+            icon=icon,
+            sun_times=SunTimes(
+                sunrise=today_sunrise,
+                sunset=today_sunset,
+                is_day=is_day,
+                time_of_day=time_of_day.value
+            )
+        )
+        
+        # Build 7-day forecast
+        dates = daily_data.get("time", [])
+        temp_max = daily_data.get("temperature_2m_max", [])
+        temp_min = daily_data.get("temperature_2m_min", [])
+        precip_sum = daily_data.get("precipitation_sum", [])
+        rain_sum = daily_data.get("rain_sum", [])
+        weather_codes = daily_data.get("weather_code", daily_data.get("weathercode", []))
+        
+        daily_forecast = []
+        for i in range(min(7, len(dates))):
+            day_code = weather_codes[i] if i < len(weather_codes) else 0
+            day_condition = get_weather_condition(day_code)
+            day_icon = get_weather_icon(day_condition, True)  # Use day icon for forecast
+            
+            daily_forecast.append(DailyForecast(
+                date=dates[i] if i < len(dates) else "",
+                day_name=get_day_name(dates[i]) if i < len(dates) else "",
+                temp_max=temp_max[i] if i < len(temp_max) else 0,
+                temp_min=temp_min[i] if i < len(temp_min) else 0,
+                precipitation_sum=precip_sum[i] if i < len(precip_sum) else 0,
+                rain_sum=rain_sum[i] if i < len(rain_sum) else 0,
+                weather_code=day_code,
+                weather_condition=day_condition.value,
+                weather_description=get_weather_description(day_code),
+                icon=day_icon
+            ))
+        
+        # Calculate rain alert
+        daily_data_for_alert = [
+            {
+                "date": dates[i] if i < len(dates) else "",
+                "rain_sum": rain_sum[i] if i < len(rain_sum) else 0,
+                "precipitation_sum": precip_sum[i] if i < len(precip_sum) else 0
+            }
+            for i in range(min(4, len(dates)))
+        ]
+        rain_alert = calculate_rain_alert(daily_data_for_alert)
+        
+        # Generate farmer advice
+        farmer_advice = generate_farmer_advice(
+            weather_code=weather_code,
+            temperature=current_weather.temperature,
+            humidity=current_weather.humidity,
+            rain_alert=rain_alert
+        )
+        
+        # Build response
+        result = WeatherIntelligenceResponse(
+            location=location.title(),
+            latitude=latitude,
+            longitude=longitude,
+            timezone=timezone,
+            current=current_weather,
+            daily_forecast=daily_forecast,
+            rain_alert=rain_alert,
+            farmer_advice=farmer_advice,
+            last_updated=datetime.now().isoformat(),
+            cached=False
+        )
+        
+        # Cache the response
+        cache_data = {"_response": result.model_dump()}
+        _set_cache(latitude, longitude, cache_data)
+        
+        return result
+    except Exception as parse_error:
+        print(f"[WEATHER ERROR] Data parsing failed: {parse_error}")
+        print(f"[WEATHER DEBUG] API keys: {list(data.keys()) if data else 'NO DATA'}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Weather processing error: {str(parse_error)}"
+        )
 
 
 @router.get("/rain-alert")

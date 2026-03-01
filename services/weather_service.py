@@ -90,6 +90,7 @@ class WeatherService:
             "forecast_days": 7
         }
         
+        # Try http_client first (has circuit breaker)
         try:
             response = await http_client.get(
                 self.base_url,
@@ -99,9 +100,21 @@ class WeatherService:
                 max_retries=2
             )
             return response.json()
-        except HTTPClientError as e:
-            logger.error(f"Failed to fetch weather data: {e}")
-            raise
+        except Exception as e:
+            logger.warning(f"http_client weather failed: {e}, trying aiohttp fallback...")
+        
+        # Fallback: direct aiohttp call (bypasses circuit breaker)
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+                async with session.get(self.base_url, params=params) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    logger.error(f"aiohttp weather fallback got status {resp.status}")
+        except Exception as e2:
+            logger.error(f"aiohttp weather fallback also failed: {e2}")
+        
+        raise HTTPClientError(f"All weather fetch methods failed for {lat},{lon}")
 
     async def get_forecast(self, location: str) -> Dict[str, Any]:
         """

@@ -16,6 +16,7 @@ from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from enum import Enum
 import httpx
+import aiohttp
 import asyncio
 
 router = APIRouter()
@@ -593,29 +594,32 @@ async def get_weather_intelligence(
         "forecast_days": 7
     }
     
+    data = None
+    # Try aiohttp first (more reliable on Render), then httpx as fallback
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(api_url, params=params)
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=502,
-                    detail="வானிலை தரவை பெற முடியவில்லை. மீண்டும் முயற்சிக்கவும்."
-                )
-            
-            data = response.json()
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+            async with session.get(api_url, params=params) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                else:
+                    print(f"[WEATHER] aiohttp got status {resp.status}")
+    except Exception as e1:
+        print(f"[WEATHER] aiohttp failed: {e1}, trying httpx...")
     
-    except httpx.TimeoutException:
-        # Check cache for fallback
-        if cached_data:
-            cached_response = cached_data.get("_response", {})
-            cached_response["cached"] = True
-            return cached_response
-        raise HTTPException(
-            status_code=504,
-            detail="வானிலை தரவை பெற முடியவில்லை. மீண்டும் முயற்சிக்கவும்."
-        )
-    except Exception as e:
+    # Fallback to httpx if aiohttp failed
+    if data is None:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.get(api_url, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                else:
+                    print(f"[WEATHER] httpx got status {response.status_code}")
+        except Exception as e2:
+            print(f"[WEATHER] httpx also failed: {e2}")
+    
+    # If both failed, use cache or error
+    if data is None:
         if cached_data:
             cached_response = cached_data.get("_response", {})
             cached_response["cached"] = True

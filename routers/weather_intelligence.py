@@ -598,13 +598,15 @@ async def get_weather_intelligence(
     # Try aiohttp first (more reliable on Render), then httpx as fallback
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-            async with session.get(api_url, params=params) as resp:
+            full_url = f"{api_url}?latitude={latitude}&longitude={longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,cloud_cover,precipitation&hourly=temperature_2m,relative_humidity_2m,precipitation,rain,weather_code&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_sum,rain_sum,weather_code&timezone=auto&forecast_days=7"
+            async with session.get(full_url) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                 else:
-                    print(f"[WEATHER] aiohttp got status {resp.status}")
+                    text = await resp.text()
+                    print(f"[WEATHER] aiohttp got status {resp.status}: {text[:200]}")
     except Exception as e1:
-        print(f"[WEATHER] aiohttp failed: {e1}, trying httpx...")
+        print(f"[WEATHER] aiohttp failed: {type(e1).__name__}: {e1}")
     
     # Fallback to httpx if aiohttp failed
     if data is None:
@@ -614,11 +616,26 @@ async def get_weather_intelligence(
                 if response.status_code == 200:
                     data = response.json()
                 else:
-                    print(f"[WEATHER] httpx got status {response.status_code}")
+                    print(f"[WEATHER] httpx got status {response.status_code}: {response.text[:200]}")
         except Exception as e2:
-            print(f"[WEATHER] httpx also failed: {e2}")
+            print(f"[WEATHER] httpx failed: {type(e2).__name__}: {e2}")
     
-    # If both failed, use cache or error
+    # Fallback to synchronous requests library (last resort)
+    if data is None:
+        try:
+            import requests as sync_requests
+            full_url = f"{api_url}?latitude={latitude}&longitude={longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,cloud_cover,precipitation&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_sum,rain_sum,weather_code&timezone=auto&forecast_days=7"
+            loop = asyncio.get_event_loop()
+            resp = await loop.run_in_executor(None, lambda: sync_requests.get(full_url, timeout=15))
+            if resp.status_code == 200:
+                data = resp.json()
+                print(f"[WEATHER] SUCCESS via sync requests!")
+            else:
+                print(f"[WEATHER] sync requests got status {resp.status_code}")
+        except Exception as e3:
+            print(f"[WEATHER] sync requests also failed: {type(e3).__name__}: {e3}")
+    
+    # If ALL methods failed, use cache or error
     if data is None:
         if cached_data:
             cached_response = cached_data.get("_response", {})

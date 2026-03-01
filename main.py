@@ -227,6 +227,19 @@ async def performance_status():
     
     return result
 
+# Reset circuit breakers (fix tripped weather API)
+@app.post("/reset-circuits")
+async def reset_circuits():
+    """Reset all circuit breakers to closed state"""
+    try:
+        from services.http_client import http_client
+        for name, cb in http_client._circuits.items():
+            cb._state = "closed"
+            cb._failures = 0
+        return {"status": "ok", "message": "All circuit breakers reset"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 if __name__ == "__main__":
     uvicorn.run(

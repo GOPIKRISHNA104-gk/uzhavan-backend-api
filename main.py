@@ -240,6 +240,44 @@ async def reset_circuits():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# Debug weather endpoint to diagnose API connectivity
+@app.get("/debug/weather")
+async def debug_weather():
+    """Test ALL methods of reaching Open-Meteo from this server"""
+    import traceback
+    results = {}
+    url = "https://api.open-meteo.com/v1/forecast?latitude=13.08&longitude=80.27&current=temperature_2m&timezone=auto"
+    
+    # Test 1: aiohttp
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with session.get(url) as resp:
+                results["aiohttp"] = {"status": resp.status, "data": (await resp.text())[:200]}
+    except Exception as e:
+        results["aiohttp"] = {"error": f"{type(e).__name__}: {e}", "trace": traceback.format_exc()[-300:]}
+    
+    # Test 2: httpx
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            results["httpx"] = {"status": resp.status_code, "data": resp.text[:200]}
+    except Exception as e:
+        results["httpx"] = {"error": f"{type(e).__name__}: {e}", "trace": traceback.format_exc()[-300:]}
+    
+    # Test 3: requests (sync)
+    try:
+        import requests as req
+        import asyncio
+        loop = asyncio.get_event_loop()
+        resp = await loop.run_in_executor(None, lambda: req.get(url, timeout=10))
+        results["requests"] = {"status": resp.status_code, "data": resp.text[:200]}
+    except Exception as e:
+        results["requests"] = {"error": f"{type(e).__name__}: {e}", "trace": traceback.format_exc()[-300:]}
+    
+    return results
+
 
 if __name__ == "__main__":
     uvicorn.run(
